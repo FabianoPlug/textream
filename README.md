@@ -5,7 +5,7 @@
 <h1 align="center">Textream</h1>
 
 <p align="center">
-  <strong>A free macOS teleprompter with real-time word tracking, classic auto-scroll, and voice-activated scrolling.</strong>
+  <strong>A free teleprompter for Mac, iPhone, and iPad.</strong>
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="#download">Download</a> · <a href="#features">Features</a> · <a href="#how-it-works">How It Works</a> · <a href="#building-from-source">Build</a>
+  <a href="#download">Download</a> · <a href="#ios-26-companion">iPhone &amp; iPad</a> · <a href="#features">Features</a> · <a href="#how-it-works">How It Works</a> · <a href="#building-from-source">Build</a> · <a href="https://textream.net/privacy.html">Privacy</a>
 </p>
 
 <p align="center">
@@ -24,31 +24,38 @@
 
 ## What is Textream?
 
-Textream is a free, open-source macOS app that guides you through your script with three modes: **word tracking** (highlights each word as you say it), **classic** (constant-speed auto-scroll), and **voice-activated** (scrolls while you speak, pauses when you're silent). It displays your text in a sleek **Dynamic Island-style overlay** at the top of your screen, a **draggable floating window**, or **fullscreen on a Sidecar iPad** — visible only to you, invisible to your audience.
+Textream is a free, open-source teleprompter that guides you through your script with three modes: **word tracking** (highlights each word as you say it), **classic** (constant-speed auto-scroll), and **voice-activated** (scrolls while you speak, pauses when you're silent). The Mac app displays your text in a sleek **Dynamic Island-style overlay**, a **draggable floating window**, or **fullscreen on a Sidecar iPad**. The iPhone and iPad app adds near-camera reading and presenter-only camera recording.
 
 Paste your script, hit play, and start speaking. When you're done, the overlay closes automatically.
 
 ## Download
 
-**[Download the latest .dmg from Releases](https://github.com/f/textream/releases/latest)**
+**[Download Textream from the App Store](https://apps.apple.com/app/textream/id6800061488)** for Mac, iPhone, and iPad.
+
+Or **[download the latest .dmg from GitHub Releases](https://github.com/f/textream/releases/latest)**.
 
 Or install with Homebrew:
 
 ```bash
-brew install f/textream/textream
+brew install textream
 ```
 
 > Requires **macOS 15 Sequoia** or later. Works on Apple Silicon and Intel.
 
-### First launch
+## iOS 26 Companion
 
-Since Textream is distributed outside the Mac App Store, macOS may block it on first open. Run this once in Terminal:
+The Textream companion for iPhone and iPad is part of the same universal App Store listing as the Mac app.
 
-```bash
-xattr -cr /Applications/Textream.app
-```
-
-Then right-click the app → **Open**. After the first launch, macOS remembers your choice.
+- **Portrait and landscape** — A fullscreen teleprompter layout adapts to both orientations.
+- **Mirror mode for teleprompter glass** — Read mode can flip the prompt horizontally, vertically, or on both axes whenever the device is in landscape. The prompt controls stay readable, and a compact ↔ button opens live mirror, position, text-size, speed, and playback-control settings.
+- **Eye-contact reading position** — The active line sits just below the front camera by default, or can be centered in Prompter Settings.
+- **The same three guidance modes** — Word Tracking, Classic auto-scroll, and Voice-Activated scrolling use the same behavior as the Mac app.
+- **Optional camera while reading** — Read mode works as a distraction-free teleprompter, or you can show and hide the camera behind the prompt.
+- **Selfie video recording** — Record mode captures camera video and microphone audio, starts with the front camera, and lets you switch between front and back cameras before recording.
+- **Saved to Photos** — Completed recordings are added to Photos and appear in an adaptive Textream recordings gallery, where you can play, select, and delete them. If a save fails, Textream keeps a pending local copy and offers retry or discard controls in the current or next Record session.
+- **Presenter-only prompt** — The translucent scrolling prompt is visible on screen while you record, but it is not burned into the saved video.
+- **Matching fonts** — Sans, Serif, Mono, and OpenDyslexic are available on both platforms.
+- **Liquid Glass** — Controls use the native iOS 26 Liquid Glass appearance.
 
 ## Features
 
@@ -56,7 +63,7 @@ Then right-click the app → **Open**. After the first launch, macOS remembers y
 
 | Mode | Description | Microphone |
 |---|---|---|
-| **Word Tracking** (default) | On-device speech recognition highlights each word as you say it. No cloud, no latency, works offline. Supports dozens of languages. | Required |
+| **Word Tracking** (default) | macOS speech recognition highlights each word as you say it. Depending on your Mac, language, and system availability, recognition may happen on-device or Apple may process microphone audio. | Required |
 | **Classic** | Auto-scrolls at a constant speed. No microphone needed. | Not needed |
 | **Voice-Activated** | Scrolls while you speak, pauses when you're silent or muted. Perfect for natural pacing. | Required |
 
@@ -119,9 +126,10 @@ View your teleprompter on **any device** — phone, tablet, or another computer 
 - **Enable in Settings → Remote** — Starts a lightweight HTTP + WebSocket server on your Mac.
 - **QR code** — Scan the generated QR code from your phone or tablet to open the teleprompter instantly.
 - **Real-time sync** — Words highlight, waveform animates, and progress updates in real time over WebSocket.
+- **Mirror mode (per device)** — Tap **Mirror** in the remote view to flip the prompt horizontally for teleprompter glass. The choice is remembered on that device, and `?mirror=1` or `?mirror=0` in the URL presets it.
 - **No app needed** — Works in any modern browser. No installation required on the remote device.
 - **Configurable port** — Default port 7373, adjustable in advanced settings.
-- **Fully local** — All traffic stays on your local network. Nothing leaves your Wi-Fi.
+- **Direct local connection** — Textream does not relay Remote Connection traffic through a developer server. Enable it only on a local network and with devices you trust.
 
 ### Director Mode
 
@@ -148,7 +156,7 @@ Let someone else control your teleprompter remotely. A director can write, edit,
 - **Tap to jump** — Tap any word in the overlay to jump the tracker to that position.
 - **Pause & resume** — Go off-script, take a break, come back. The tracker picks up where you left off.
 - **Mute / unmute** — Toggle the microphone on or off from the overlay in any mode.
-- **Completely private** — All processing happens on-device. No accounts, no tracking, no data leaves your Mac.
+- **Private by design** — No accounts, ads, analytics, or Textream-operated cloud service. Scripts and settings stay under your control. In Word Tracking mode, macOS speech recognition may send microphone audio to Apple for processing; see the [privacy policy](https://textream.net/privacy.html).
 - **Auto update checker** — Checks GitHub Releases for new versions on launch and from the Textream menu.
 - **Open source** — MIT licensed. Contributions welcome.
 
@@ -171,9 +179,18 @@ Let someone else control your teleprompter remotely. A director can write, edit,
 
 ### Requirements
 
+For the macOS app:
+
 - macOS 15+
 - Xcode 16+
-- Swift 5.0+
+
+For the iOS companion:
+
+- Xcode 26+
+- The iOS 26 SDK and an installed iOS 26 Simulator runtime
+- A physical iPhone or iPad to verify camera, microphone, recording, and Photos saving; Simulator can verify the interface and orientation layouts but does not provide camera recording hardware
+
+The macOS target uses Swift 5 language mode. The new iOS target uses Swift 6 with complete concurrency checking.
 
 ### Build
 
@@ -183,7 +200,26 @@ cd textream/Textream
 open Textream.xcodeproj
 ```
 
-Build and run with ⌘R in Xcode.
+Choose the **Textream** scheme for macOS or **TextreamiOS** for iOS, select a compatible destination, then build and run with ⌘R in Xcode. The **TextreamiOS** scheme also includes the iOS unit tests.
+
+### Install on an iPhone or iPad with Xcode
+
+You can install and try the development build on your own device with [a personal Apple Account](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices); a paid Apple Developer Program membership is not required for local testing.
+
+1. Install Xcode 26 or later, clone this repository, and open `Textream/Textream.xcodeproj`.
+2. In **Xcode → Settings → Accounts**, add your Apple Account.
+3. Connect your unlocked iPhone or iPad to the Mac. Trust the computer if the device asks, then wait for it to appear in Xcode's run-destination menu.
+4. Select the **Textream** project, select the **TextreamiOS** target, and open **Signing & Capabilities**.
+5. Leave **Automatically manage signing** enabled and choose your personal team. If Xcode reports that `dev.fka.textream` is unavailable, change the bundle identifier to a unique value such as `com.yourname.textream.dev`.
+6. Select the **TextreamiOS** scheme and your connected device in the Xcode toolbar, then press **⌘R** or choose **Product → Run**.
+7. If prompted, enable [**Developer Mode**](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) on the device in **Settings → Privacy & Security → Developer Mode**, restart the device, confirm Developer Mode after restart, and run the app from Xcode again.
+8. Accept the camera, microphone, speech-recognition, and Photos permissions only for the features you want to test.
+
+This installs a development-signed build directly from your Mac; it does not publish anything to the App Store or TestFlight.
+
+To try mirror mode, choose **Read**, enable **Mirror in landscape**, select an axis, and start the prompter. Rotate the device to landscape and use the small **↔** button at the top right to adjust mirror axis, reading position, text size, scroll speed, or hide the playback controls while the prompt is running.
+
+Run the iOS test suite with **Product → Test** or **⌘U**. Camera capture, microphone input, recording, and Photos saving should be verified on a physical device because Simulator doesn't provide the same hardware behavior.
 
 ### Project structure
 
@@ -191,21 +227,25 @@ Build and run with ⌘R in Xcode.
 Textream/
 ├── Textream.xcodeproj
 ├── Info.plist
-└── Textream/
-    ├── TextreamApp.swift              # App entry point, deep link handling
-    ├── ContentView.swift              # Main text editor UI + About view
-    ├── TextreamService.swift          # Service layer, URL scheme handling
-    ├── SpeechRecognizer.swift         # On-device speech recognition engine
-    ├── NotchOverlayController.swift   # Dynamic Island + floating overlay
-    ├── ExternalDisplayController.swift # Sidecar / external display output
-    ├── NotchSettings.swift            # User preferences and presets
-    ├── SettingsView.swift             # Tabbed settings UI
-    ├── MarqueeTextView.swift          # Word flow layout and highlighting
-    ├── BrowserServer.swift            # Remote connection HTTP + WebSocket server
-    ├── DirectorServer.swift           # Director mode HTTP + WebSocket server
-    ├── PresentationNotesExtractor.swift # PPTX presenter notes extraction
-    ├── UpdateChecker.swift            # GitHub release update checker
-    └── Assets.xcassets/               # App icon and colors
+├── Textream/                         # macOS app
+│   ├── TextreamApp.swift              # App entry point, deep link handling
+│   ├── ContentView.swift              # Main text editor UI + About view
+│   ├── TextreamService.swift          # Service layer, URL scheme handling
+│   ├── SpeechRecognizer.swift         # macOS speech recognition integration
+│   ├── NotchOverlayController.swift   # Dynamic Island + floating overlay
+│   ├── ExternalDisplayController.swift # Sidecar / external display output
+│   ├── NotchSettings.swift            # User preferences and presets
+│   ├── SettingsView.swift             # Tabbed settings UI
+│   ├── MarqueeTextView.swift          # Word flow layout and highlighting
+│   ├── BrowserServer.swift            # Remote connection HTTP + WebSocket server
+│   ├── DirectorServer.swift           # Director mode HTTP + WebSocket server
+│   ├── PresentationNotesExtractor.swift # PPTX presenter notes extraction
+│   ├── UpdateChecker.swift            # GitHub release update checker
+│   └── Assets.xcassets/               # macOS app icon and colors
+├── TextreamiOS-Info.plist             # iOS permissions and orientations
+├── TextreamiOS/                       # iOS app, capture, speech, models, and views
+│   └── Resources/                     # iOS assets and OpenDyslexic font
+└── TextreamiOSTests/                  # iOS prompt and matching tests
 ```
 
 ## URL Scheme
@@ -226,18 +266,32 @@ The Director Mode exposes an HTTP server and a WebSocket server on your local ne
 
 | Service | Default Port | Configurable in |
 |---|---|---|
-| **HTTP** (serves the built-in web UI) | `7575` | Settings → Director → Advanced |
+| **HTTP** (serves the built-in web UI) | `7575` | Settings → Director → Advanced (`1024`–`65534`) |
 | **WebSocket** (bidirectional communication) | `7576` (HTTP port + 1) | Automatic |
 
 ### Connecting
 
-1. Open a WebSocket connection to `ws://<mac-ip>:<ws-port>` (e.g. `ws://192.168.1.42:7576`).
-2. The server immediately begins sending **state frames** as JSON at ~10 Hz once a script is active.
-3. Send **command frames** as JSON to control the teleprompter.
+1. Fetch the built-in Director page from `http://<mac-ip>:<http-port>` and extract the current 64-character `AUTH_TOKEN` embedded in its script. The token changes whenever the Director server restarts.
+2. Open a WebSocket connection to `ws://<mac-ip>:<ws-port>` (e.g. `ws://192.168.1.42:7576`).
+3. Within five seconds, send `{"type":"auth","text":"<token>"}` as the first WebSocket frame. The server closes clients that skip or fail authentication.
+4. Send command frames to control the teleprompter. Once a script is active, the server broadcasts state frames as JSON at approximately 10 Hz.
+
+Director Mode is intended for trusted local networks. HTTP and WebSocket traffic is not encrypted, so do not expose either port to the public internet or log/share the token.
 
 ### Commands (Client → App)
 
 Send JSON messages over the WebSocket:
+
+#### `auth` — Authenticate the connection
+
+```json
+{
+  "type": "auth",
+  "text": "<64-character token from the Director page>"
+}
+```
+
+This must be the first frame on every connection. It does not start a read.
 
 #### `setText` — Start reading a new script
 
@@ -260,7 +314,7 @@ Replaces the current text, starts word tracking, and opens the teleprompter over
 }
 ```
 
-Updates the full script text while preserving the read position. `readCharCount` is the number of characters already read (locked). Only text after this offset is replaced. Use this for live editing during a read.
+Updates the full script text while preserving the confirmed read position. Set `readCharCount` to the latest `highlightedCharCount` received from Textream; do not calculate this offset independently. Textream clamps it to the Mac’s recognized count and the new script length. Keep the prefix before that offset unchanged and edit only unread text after it.
 
 #### `stop` — Stop the teleprompter
 
@@ -285,6 +339,7 @@ The server broadcasts a JSON object on every tick (~100 ms):
   "isDone": false,
   "isListening": true,
   "fontColor": "#F5F5F7",
+  "cueColor": "#F5F5F7",
   "lastSpokenText": "Welcome everyone to today's",
   "audioLevels": [0.12, 0.34, 0.08, ...]
 }
@@ -299,6 +354,7 @@ The server broadcasts a JSON object on every tick (~100 ms):
 | `isDone` | `bool` | `true` when `highlightedCharCount >= totalCharCount` (finished reading). |
 | `isListening` | `bool` | `true` when the microphone is actively listening. |
 | `fontColor` | `string` | CSS color of the text in the overlay (user preference). |
+| `cueColor` | `string` | CSS color of bracketed stage directions (user preference). |
 | `lastSpokenText` | `string` | Last recognized speech fragment. |
 | `audioLevels` | `double[]` | Array of audio level samples (0.0–1.0) for waveform visualization. |
 
@@ -307,10 +363,28 @@ When the overlay is not active, the server sends a frame with `isActive: false` 
 ### Example: Minimal Python Client
 
 ```python
-import asyncio, json, websockets
+import asyncio, json, re, urllib.request
+import websockets
+
+HOST = "192.168.1.42"
+HTTP_PORT = 7575
+
+def director_token():
+    with urllib.request.urlopen(f"http://{HOST}:{HTTP_PORT}", timeout=3) as response:
+        html = response.read().decode("utf-8")
+    match = re.search(r"AUTH_TOKEN='([0-9a-f]{64})'", html)
+    if not match:
+        raise RuntimeError("Director token not found")
+    return match.group(1)
 
 async def director():
-    async with websockets.connect("ws://192.168.1.42:7576") as ws:
+    async with websockets.connect(f"ws://{HOST}:{HTTP_PORT + 1}") as ws:
+        # Authenticate before sending any commands.
+        await ws.send(json.dumps({
+            "type": "auth",
+            "text": director_token()
+        }))
+
         # Send a script
         await ws.send(json.dumps({
             "type": "setText",
@@ -341,5 +415,6 @@ MIT
 
 <p align="center">
   Original idea by <a href="https://x.com/semihdev">Semih Kışlar</a> — thanks to him!<br>
-  Made by <a href="https://fka.dev">Fatih Kadir Akin</a>
+  Made by <a href="https://fka.dev">Fatih Kadir Akin</a><br>
+  <a href="https://textream.net/privacy.html">Privacy</a> · <a href="https://textream.net/support.html">Support</a>
 </p>

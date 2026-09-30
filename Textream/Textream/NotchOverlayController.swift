@@ -9,6 +9,13 @@ import AppKit
 import SwiftUI
 import Combine
 
+/// A nonactivating panel that can still receive keyboard and control events.
+/// This keeps the prompter interactive while another app (for example, a
+/// screen recorder) remains the active application.
+final class PrompterPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 @Observable
 class NotchFrameTracker {
     var visibleHeight: CGFloat = 37 {
@@ -33,6 +40,7 @@ class NotchFrameTracker {
 @Observable
 class OverlayContent {
     var words: [String] = []
+    var paragraphBreakBeforeWordIndices: Set<Int> = []
     var totalCharCount: Int = 0
     var hasNextPage: Bool = false
 
@@ -45,6 +53,8 @@ class OverlayContent {
 }
 
 class NotchOverlayController: NSObject {
+    private let cursorOffset: CGFloat = 8
+    private let screenEdgeMargin: CGFloat = 5
     private var panel: NSPanel?
     let speechRecognizer = SpeechRecognizer()
     let overlayContent = OverlayContent()
@@ -58,10 +68,11 @@ class NotchOverlayController: NSObject {
     private var currentScreenID: UInt32 = 0
     private var stopButtonPanel: NSPanel?
     private var escMonitor: Any?
+    private var keepAwakeActivity: NSObjectProtocol?
 
     func show(text: String, hasNextPage: Bool = false, onComplete: (() -> Void)? = nil) {
         self.onComplete = onComplete
-        self.onNextPage = { [weak self] in
+        self.onNextPage = {
             TextreamService.shared.advanceToNextPage()
         }
         self.isDismissing = false
@@ -71,6 +82,7 @@ class NotchOverlayController: NSObject {
         // Populate overlay content
         let normalized = splitTextIntoWords(text)
         overlayContent.words = normalized
+        overlayContent.paragraphBreakBeforeWordIndices = paragraphBreakWordIndices(in: text)
         overlayContent.totalCharCount = normalized.joined(separator: " ").count
         overlayContent.hasNextPage = hasNextPage
 
@@ -113,6 +125,8 @@ class NotchOverlayController: NSObject {
             showStopButton(on: screen)
         }
 
+        updateKeepAwakeActivity(enabled: settings.keepScreenAwake)
+
         // Word tracking & silence-paused need the microphone; classic does not
         if settings.listeningMode != .classic {
             speechRecognizer.start(with: text)
@@ -129,6 +143,7 @@ class NotchOverlayController: NSObject {
         speechRecognizer.lastSpokenText = ""
 
         overlayContent.words = normalized
+        overlayContent.paragraphBreakBeforeWordIndices = paragraphBreakWordIndices(in: text)
         overlayContent.totalCharCount = normalized.joined(separator: " ").count
         overlayContent.hasNextPage = hasNextPage
 
@@ -174,21 +189,23 @@ class NotchOverlayController: NSObject {
     private func updateCursorPosition() {
         guard let panel else { return }
         let mouse = NSEvent.mouseLocation
-        let cursorOffset: CGFloat = 8
-        let x = mouse.x + cursorOffset
-        let h = panel.frame.height
-        var y = mouse.y - h
-        let w = panel.frame.width
+        guard let screen = screenUnderMouse() ?? panel.screen ?? NSScreen.main else { return }
+        let frame = cursorFollowingFrame(mouse: mouse, panelSize: panel.frame.size, screen: screen)
+        panel.setFrame(frame, display: false)
+    }
 
-        // Keep panel below the menu bar so the status bar stop button stays visible
-        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
-            let menuBarBottom = screen.visibleFrame.maxY
-            if y + h > menuBarBottom {
-                y = menuBarBottom - h
-            }
-        }
+    private func cursorFollowingFrame(mouse: NSPoint, panelSize: NSSize, screen: NSScreen) -> NSRect {
+        let screenFrame = screen.frame
 
-        panel.setFrame(NSRect(x: x, y: y, width: w, height: h), display: false)
+        let minimumX = screenFrame.minX + screenEdgeMargin
+        let maximumX = max(minimumX, screenFrame.maxX - panelSize.width - screenEdgeMargin)
+        let x = min(max(mouse.x + cursorOffset, minimumX), maximumX)
+
+        let minimumY = screenFrame.minY + screenEdgeMargin
+        let maximumY = max(minimumY, screen.visibleFrame.maxY - panelSize.height)
+        let y = min(max(mouse.y - panelSize.height, minimumY), maximumY)
+
+        return NSRect(origin: NSPoint(x: x, y: y), size: panelSize)
     }
 
     private func checkMouseScreen() {
@@ -215,7 +232,6 @@ class NotchOverlayController: NSObject {
     private func showPinned(settings: NotchSettings, screen: NSScreen) {
         let notchWidth = settings.notchWidth
         let textAreaHeight = settings.textAreaHeight
-        let maxExtraHeight: CGFloat = 350
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
 
@@ -232,14 +248,19 @@ class NotchOverlayController: NSObject {
         self.frameTracker = tracker
         self.currentScreenID = screen.displayID
 
-        let overlayView = NotchOverlayView(content: overlayContent, speechRecognizer: speechRecognizer, menuBarHeight: menuBarHeight, baseTextHeight: textAreaHeight, maxExtraHeight: maxExtraHeight, frameTracker: tracker)
+        let overlayView = NotchOverlayView(
+            content: overlayContent,
+            speechRecognizer: speechRecognizer,
+            menuBarHeight: menuBarHeight,
+            frameTracker: tracker
+        )
         let contentView = NSHostingView(rootView: overlayView)
 
         // Start panel at full target size (SwiftUI animates the notch shape inside)
         let targetHeight = menuBarHeight + textAreaHeight
         let targetY = screenFrame.maxY - targetHeight
         let xPosition = screenFrame.midX - notchWidth / 2
-        let panel = NSPanel(
+        let panel = PrompterPanel(
             contentRect: NSRect(x: xPosition, y: targetY, width: notchWidth, height: targetHeight),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -272,9 +293,12 @@ class NotchOverlayController: NSObject {
         let panelHeight = settings.textAreaHeight
 
         let mouse = NSEvent.mouseLocation
-        let cursorOffset: CGFloat = 8
-        let xPosition = mouse.x + cursorOffset
-        let yPosition = mouse.y - panelHeight
+        let cursorScreen = screenUnderMouse() ?? screen
+        let initialFrame = cursorFollowingFrame(
+            mouse: mouse,
+            panelSize: NSSize(width: panelWidth, height: panelHeight),
+            screen: cursorScreen
+        )
 
         let floatingView = FloatingOverlayView(
             content: overlayContent,
@@ -284,8 +308,8 @@ class NotchOverlayController: NSObject {
         )
         let contentView = NSHostingView(rootView: floatingView)
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: xPosition, y: yPosition, width: panelWidth, height: panelHeight),
+        let panel = PrompterPanel(
+            contentRect: initialFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -312,11 +336,12 @@ class NotchOverlayController: NSObject {
         let fullscreenView = ExternalDisplayView(
             content: overlayContent,
             speechRecognizer: speechRecognizer,
-            mirrorAxis: nil
+            mirrorAxis: nil,
+            handlesAutoNextPage: true
         )
         let contentView = NSHostingView(rootView: fullscreenView)
 
-        let panel = NSPanel(
+        let panel = PrompterPanel(
             contentRect: screenFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -351,7 +376,7 @@ class NotchOverlayController: NSObject {
         )
         let contentView = NSHostingView(rootView: floatingView)
 
-        let panel = NSPanel(
+        let panel = PrompterPanel(
             contentRect: NSRect(x: xPosition, y: yPosition, width: panelWidth, height: panelHeight),
             styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
@@ -394,6 +419,7 @@ class NotchOverlayController: NSObject {
             self.panel?.orderOut(nil)
             self.panel = nil
             self.frameTracker = nil
+            self.endKeepAwakeActivity()
             self.speechRecognizer.shouldDismiss = false
             self.isDismissing = false
             self.onComplete?()
@@ -427,6 +453,7 @@ class NotchOverlayController: NSObject {
         panel?.orderOut(nil)
         panel = nil
         frameTracker = nil
+        endKeepAwakeActivity()
         speechRecognizer.shouldDismiss = false
         speechRecognizer.shouldAdvancePage = false
     }
@@ -463,12 +490,39 @@ class NotchOverlayController: NSObject {
                         self.panel?.orderOut(nil)
                         self.panel = nil
                         self.frameTracker = nil
+                        self.endKeepAwakeActivity()
                         self.speechRecognizer.shouldDismiss = false
                         self.onComplete?()
                     }
                 }
             }
             .store(in: &cancellables)
+    }
+
+    private func beginKeepAwakeActivity() {
+        endKeepAwakeActivity()
+        keepAwakeActivity = ProcessInfo.processInfo.beginActivity(
+            options: [
+                .userInitiated,
+                .idleSystemSleepDisabled,
+                .idleDisplaySleepDisabled
+            ],
+            reason: "Textream teleprompter reading session"
+        )
+    }
+
+    private func endKeepAwakeActivity() {
+        guard let keepAwakeActivity else { return }
+        ProcessInfo.processInfo.endActivity(keepAwakeActivity)
+        self.keepAwakeActivity = nil
+    }
+
+    func updateKeepAwakeActivity(enabled: Bool) {
+        if enabled && isShowing {
+            beginKeepAwakeActivity()
+        } else {
+            endKeepAwakeActivity()
+        }
     }
 
     var isShowing: Bool {
@@ -492,7 +546,7 @@ class NotchOverlayController: NSObject {
             self.dismiss()
         })
 
-        let panel = NSPanel(
+        let panel = PrompterPanel(
             contentRect: NSRect(x: x, y: y, width: buttonSize, height: buttonSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -626,8 +680,6 @@ struct NotchOverlayView: View {
     @Bindable var content: OverlayContent
     @Bindable var speechRecognizer: SpeechRecognizer
     let menuBarHeight: CGFloat
-    let baseTextHeight: CGFloat
-    let maxExtraHeight: CGFloat
     var frameTracker: NotchFrameTracker
 
     private var words: [String] { content.words }
@@ -637,9 +689,7 @@ struct NotchOverlayView: View {
     // Animation state - 0.0 = notch size, 1.0 = full size
     @State private var expansion: CGFloat = 0
     @State private var contentVisible = false
-    @State private var extraHeight: CGFloat = 0
     @State private var dragStartHeight: CGFloat = -1
-    @State private var isHovering: Bool = false
 
     // Timer-based scroll for classic & silence-paused modes
     @State private var timerWordProgress: Double = 0
@@ -653,6 +703,8 @@ struct NotchOverlayView: View {
 
     private let topInset: CGFloat = 16
     private let collapsedInset: CGFloat = 8
+    private let compactControlTopSpacing: CGFloat = 8
+    private let compactControlFadeHeight: CGFloat = 20
 
     // macOS notch dimensions (approximate)
     private let notchHeight: CGFloat = 37
@@ -714,7 +766,7 @@ struct NotchOverlayView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let targetHeight = menuBarHeight + baseTextHeight + extraHeight
+            let targetHeight = menuBarHeight + NotchSettings.shared.textAreaHeight
             let currentHeight = notchHeight + (targetHeight - notchHeight) * expansion
             let currentWidth = notchWidth + (geo.size.width - notchWidth) * expansion
 
@@ -777,7 +829,12 @@ struct NotchOverlayView: View {
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
-        .onChange(of: extraHeight) { _, _ in updateFrameTracker() }
+        .onChange(of: NotchSettings.shared.textAreaHeight) { _, newHeight in
+            frameTracker.visibleHeight = menuBarHeight + newHeight
+        }
+        .onChange(of: NotchSettings.shared.notchWidth) { _, newWidth in
+            frameTracker.visibleWidth = newWidth
+        }
         .onAppear {
             // Phase 1: Expand container with smooth easing
             withAnimation(.easeOut(duration: 0.4)) {
@@ -846,13 +903,10 @@ struct NotchOverlayView: View {
         .onChange(of: content.totalCharCount) { _, _ in
             timerWordProgress = 0
         }
-    }
-
-    private func updateFrameTracker() {
-        let targetHeight = menuBarHeight + baseTextHeight + extraHeight
-        let fullWidth = NotchSettings.shared.notchWidth
-        frameTracker.visibleHeight = targetHeight
-        frameTracker.visibleWidth = fullWidth
+        .onChange(of: content.currentPageIndex) { _, _ in
+            timerWordProgress = 0
+            isUserScrolling = false
+        }
     }
 
     private var isEffectivelyListening: Bool {
@@ -889,10 +943,26 @@ struct NotchOverlayView: View {
                 },
                 smoothScroll: listeningMode != .wordTracking,
                 smoothWordProgress: timerWordProgress,
-                isListening: isEffectivelyListening
+                isListening: isEffectivelyListening,
+                readingPosition: NotchSettings.shared.readingPosition,
+                paragraphBreakBeforeWordIndices: NotchSettings.shared.showParagraphDividers
+                    ? content.paragraphBreakBeforeWordIndices
+                    : []
             )
+            .id(content.currentPageIndex)
             .padding(.horizontal, 12)
             .padding(.top, 6)
+            .mask {
+                VStack(spacing: 0) {
+                    Color.white
+                    LinearGradient(
+                        colors: [.white, .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: compactControlFadeHeight)
+                }
+            }
             .transition(.move(edge: .top).combined(with: .opacity))
 
             Group {
@@ -906,7 +976,16 @@ struct NotchOverlayView: View {
                 .frame(width: 80, height: 24)
                 .clipped()
 
-                if listeningMode == .wordTracking {
+                if let error = speechRecognizer.error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.red.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(error)
+                } else if listeningMode == .wordTracking,
+                          NotchSettings.shared.showLastSpokenWords {
                     Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
@@ -971,18 +1050,26 @@ struct NotchOverlayView: View {
                     .buttonStyle(.plain)
                 } else {
                     Button {
-                        if speechRecognizer.isListening {
+                        if speechRecognizer.isListening || speechRecognizer.isStarting {
                             speechRecognizer.stop()
                         } else {
                             speechRecognizer.resume()
                         }
                     } label: {
-                        Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
-                            .frame(width: 24, height: 24)
-                            .background(.white.opacity(0.15))
-                            .clipShape(Circle())
+                        Group {
+                            if speechRecognizer.isStarting {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                    .tint(.white.opacity(0.8))
+                            } else {
+                                Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                        }
+                        .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
+                        .frame(width: 24, height: 24)
+                        .background(.white.opacity(0.15))
+                        .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -1002,47 +1089,43 @@ struct NotchOverlayView: View {
             }
             .frame(height: 24)
             .padding(.horizontal, 12)
-            .padding(.bottom, 10)
+            .padding(.top, compactControlTopSpacing)
+            .padding(.bottom, 2)
 
-            // Resize handle - only visible on hover
-            if isHovering {
-                VStack(spacing: 0) {
-                    Spacer().frame(height: 4)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white.opacity(0.25))
-                        .frame(width: 36, height: 4)
-                    Spacer().frame(height: 8)
-                }
-                .frame(height: 16)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                        .onChanged { value in
-                            if dragStartHeight < 0 {
-                                dragStartHeight = extraHeight
-                            }
-                            let newExtra = dragStartHeight + value.translation.height
-                            extraHeight = max(0, min(maxExtraHeight, newExtra))
+            // Keep the resize handle in the layout at all times to avoid hover-driven shifts.
+            VStack(spacing: 0) {
+                Spacer().frame(height: 2)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 36, height: 4)
+                Spacer().frame(height: 4)
+            }
+            .frame(height: 10)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { value in
+                        if dragStartHeight < 0 {
+                            dragStartHeight = NotchSettings.shared.textAreaHeight
                         }
-                        .onEnded { _ in
-                            dragStartHeight = -1
-                        }
-                )
-                .onHover { hovering in
-                    if hovering {
-                        NSCursor.resizeUpDown.push()
-                    } else {
-                        NSCursor.pop()
+                        let newHeight = dragStartHeight + value.translation.height
+                        NotchSettings.shared.textAreaHeight = max(
+                            NotchSettings.minHeight,
+                            min(NotchSettings.maxHeight, newHeight)
+                        )
                     }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            }
+                    .onEnded { _ in
+                        dragStartHeight = -1
+                    }
+            )
             .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isHovering = hovering
+                if hovering {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
                 }
+            }
             }
             .transition(.opacity)
         }
@@ -1100,6 +1183,13 @@ struct NotchOverlayView: View {
     private func startCountdown() {
         countdownTimer?.invalidate()
         countdownRemaining = NotchSettings.shared.autoNextPageDelay
+        guard countdownRemaining > 0 else {
+            countdownTimer = nil
+            DispatchQueue.main.async {
+                speechRecognizer.shouldAdvancePage = true
+            }
+            return
+        }
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
             DispatchQueue.main.async {
                 countdownRemaining -= 1
@@ -1343,6 +1433,10 @@ struct FloatingOverlayView: View {
         .onChange(of: content.totalCharCount) { _, _ in
             timerWordProgress = 0
         }
+        .onChange(of: content.currentPageIndex) { _, _ in
+            timerWordProgress = 0
+            isUserScrolling = false
+        }
     }
 
     private var floatingPrompterView: some View {
@@ -1370,8 +1464,13 @@ struct FloatingOverlayView: View {
                 },
                 smoothScroll: listeningMode != .wordTracking,
                 smoothWordProgress: timerWordProgress,
-                isListening: isEffectivelyListening
+                isListening: isEffectivelyListening,
+                readingPosition: NotchSettings.shared.readingPosition,
+                paragraphBreakBeforeWordIndices: NotchSettings.shared.showParagraphDividers
+                    ? content.paragraphBreakBeforeWordIndices
+                    : []
             )
+            .id(content.currentPageIndex)
             .padding(.horizontal, 16)
             .padding(.top, 12)
 
@@ -1384,7 +1483,16 @@ struct FloatingOverlayView: View {
                 )
                 .frame(width: 160, height: 24)
 
-                if listeningMode == .wordTracking {
+                if let error = speechRecognizer.error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.red.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(error)
+                } else if listeningMode == .wordTracking,
+                          NotchSettings.shared.showLastSpokenWords {
                     Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
@@ -1450,18 +1558,26 @@ struct FloatingOverlayView: View {
                         .buttonStyle(.plain)
                     } else {
                         Button {
-                            if speechRecognizer.isListening {
+                            if speechRecognizer.isListening || speechRecognizer.isStarting {
                                 speechRecognizer.stop()
                             } else {
                                 speechRecognizer.resume()
                             }
                         } label: {
-                            Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
-                                .frame(width: 24, height: 24)
-                                .background(.white.opacity(0.15))
-                                .clipShape(Circle())
+                            Group {
+                                if speechRecognizer.isStarting {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                        .tint(.white.opacity(0.8))
+                                } else {
+                                    Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                            }
+                            .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
+                            .frame(width: 24, height: 24)
+                            .background(.white.opacity(0.15))
+                            .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -1489,6 +1605,13 @@ struct FloatingOverlayView: View {
     private func startCountdown() {
         countdownTimer?.invalidate()
         countdownRemaining = NotchSettings.shared.autoNextPageDelay
+        guard countdownRemaining > 0 else {
+            countdownTimer = nil
+            DispatchQueue.main.async {
+                speechRecognizer.shouldAdvancePage = true
+            }
+            return
+        }
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
             DispatchQueue.main.async {
                 countdownRemaining -= 1

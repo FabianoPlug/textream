@@ -176,3 +176,11 @@
 "web.director.stop" = "停止";
 "web.reconnecting" = "正在重新连接…";
 "settings.height" = "高度";
+"settings.tab.reading" = "阅读";
+"settings.seconds.0" = "立即";
+"settings.seconds.1" = "1 秒";
+"speech.recognitionDenied.short" = "未获得语音识别权限。请打开“系统设置”→“隐私与安全性”→“语音识别”。";
+"speech.microphoneAuthUnavailable" = "无法获取麦克风授权。";
+"speech.unsupportedLanguage" = "所选语言不支持语音识别。";
+"speech.requestUnavailable" = "无法创建语音识别请求。";
+"speech.unsupportedAudioFormat" = "不支持此音频输入格式。";
