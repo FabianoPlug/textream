@@ -323,7 +323,7 @@ class DirectorServer {
             "newScript": "web.director.newScript"
         ])
         let lang = L10n.webLanguageCode
-        """
+        return """
         <!DOCTYPE html>
         <html lang="\(lang)">
         <head>
@@ -451,7 +451,7 @@ class DirectorServer {
         <script>
         const WSP=\(wsPort),host=location.hostname,AUTH_TOKEN='\(authToken)';
         const L10N=\(stringsJSON);
-        let ws,rt,isActive=false,isRunning=false,lastReadCount=0;
+        let ws,rt,isActive=false,isRunning=false,lastReadCount=0,lockedReadText='';
 
         document.getElementById('status-text').textContent=L10N.connecting;
         document.getElementById('edit-text').dataset.placeholder=L10N.placeholder;
@@ -529,13 +529,18 @@ class DirectorServer {
         }
 
         /* ---- read boundary ---- */
+        function normalizeDirectorText(text){
+          return text.replace(/\\r\\n?/g,'\\n')
+            .replace(/[^\\S\\n]+/g,' ')
+            .replace(/ *\\n(?:[^\\S\\n]*\\n)* */g,'\\n')
+            .trim();
+        }
         function getText(el){
-          return (el.innerText||el.textContent||'').replace(/\\n/g,' ');
+          return el.innerText||el.textContent||'';
         }
         function getFullText(){
-          const readEl=document.getElementById('read-text');
           const editEl=document.getElementById('edit-text');
-          return getText(readEl)+getText(editEl);
+          return normalizeDirectorText(lockedReadText+getText(editEl));
         }
 
         function updateReadBoundary(charCount){
@@ -550,6 +555,7 @@ class DirectorServer {
           const editEl=document.getElementById('edit-text');
           const divider=document.getElementById('read-divider');
 
+          lockedReadText=readPart;
           readEl.textContent=readPart;
           divider.classList.toggle('visible',readPart.length>0);
 
@@ -606,6 +612,7 @@ class DirectorServer {
           isRunning=false;
           isActive=false;
           lastReadCount=0;
+          lockedReadText='';
           updateGoButton();
         }
 

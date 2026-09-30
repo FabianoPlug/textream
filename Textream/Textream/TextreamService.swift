@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 
 class TextreamService: NSObject, ObservableObject {
     static let shared = TextreamService()
+    private static let lastDocumentURLDefaultsKey = "lastDocumentURL"
     let overlayController = NotchOverlayController()
     let externalDisplayController = ExternalDisplayController()
     let browserServer = BrowserServer()
@@ -55,10 +56,12 @@ class TextreamService: NSObject, ObservableObject {
         // Also show on external display if configured (same parsing as overlay)
         let words = splitTextIntoWords(trimmed)
         let totalCharCount = words.joined(separator: " ").count
+        let paragraphBreaks = paragraphBreakWordIndices(in: trimmed)
         externalDisplayController.show(
             speechRecognizer: overlayController.speechRecognizer,
             words: words,
             totalCharCount: totalCharCount,
+            paragraphBreakBeforeWordIndices: paragraphBreaks,
             hasNextPage: hasNextPage
         )
 
@@ -115,6 +118,7 @@ class TextreamService: NSObject, ObservableObject {
         // Also update external display content in-place
         let words = splitTextIntoWords(trimmed)
         externalDisplayController.overlayContent.words = words
+        externalDisplayController.overlayContent.paragraphBreakBeforeWordIndices = paragraphBreakWordIndices(in: trimmed)
         externalDisplayController.overlayContent.totalCharCount = words.joined(separator: " ").count
         externalDisplayController.overlayContent.hasNextPage = hasNextPage
 
@@ -129,20 +133,25 @@ class TextreamService: NSObject, ObservableObject {
         // Unmute after new page content is loaded
         if wasListening {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.overlayController.speechRecognizer.resume()
+                guard let recognizer = self?.overlayController.speechRecognizer,
+                      !recognizer.isListening,
+                      !recognizer.isStarting else { return }
+                recognizer.resume()
             }
         }
     }
 
     func updatePageInfo() {
-        let content = overlayController.overlayContent
-        content.pageCount = pages.count
-        content.currentPageIndex = currentPageIndex
-        content.pagePreviews = pages.enumerated().map { (i, text) in
+        let pagePreviews = pages.enumerated().map { (i, text) in
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { return "" }
             let preview = String(trimmed.prefix(40))
             return preview + (trimmed.count > 40 ? "…" : "")
+        }
+        for content in [overlayController.overlayContent, externalDisplayController.overlayContent] {
+            content.pageCount = pages.count
+            content.currentPageIndex = currentPageIndex
+            content.pagePreviews = pagePreviews
         }
     }
 
@@ -166,6 +175,27 @@ class TextreamService: NSObject, ObservableObject {
 
     // MARK: - File Operations
 
+    private var lastDocumentDirectoryURL: URL? {
+        guard let path = UserDefaults.standard.string(forKey: Self.lastDocumentURLDefaultsKey),
+              !path.isEmpty else { return nil }
+
+        let directoryURL = URL(fileURLWithPath: path).deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+            atPath: directoryURL.path,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue else { return nil }
+        return directoryURL
+    }
+
+    func rememberDocumentURL(_ url: URL) {
+        guard url.isFileURL else { return }
+        UserDefaults.standard.set(
+            url.standardizedFileURL.path,
+            forKey: Self.lastDocumentURLDefaultsKey
+        )
+    }
+
     func saveFile() {
         if let url = currentFileURL {
             saveToURL(url)
@@ -179,6 +209,8 @@ class TextreamService: NSObject, ObservableObject {
         panel.allowedContentTypes = [.init(filenameExtension: "textream")!]
         panel.nameFieldStringValue = L10n.string("document.untitled.filename")
         panel.canCreateDirectories = true
+        panel.directoryURL = currentFileURL?.deletingLastPathComponent()
+            ?? lastDocumentDirectoryURL
 
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
@@ -192,6 +224,7 @@ class TextreamService: NSObject, ObservableObject {
             try data.write(to: url, options: .atomic)
             currentFileURL = url
             savedPages = pages
+            rememberDocumentURL(url)
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {
             let alert = NSAlert()
@@ -216,6 +249,8 @@ class TextreamService: NSObject, ObservableObject {
         ]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        panel.directoryURL = currentFileURL?.deletingLastPathComponent()
+            ?? lastDocumentDirectoryURL
 
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
@@ -244,6 +279,7 @@ class TextreamService: NSObject, ObservableObject {
                     self?.currentPageIndex = 0
                     self?.readPages.removeAll()
                     self?.currentFileURL = nil
+                    self?.rememberDocumentURL(url)
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -291,6 +327,7 @@ class TextreamService: NSObject, ObservableObject {
             currentPageIndex = 0
             readPages.removeAll()
             currentFileURL = url
+            rememberDocumentURL(url)
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {
             let alert = NSAlert()
@@ -375,10 +412,12 @@ class TextreamService: NSObject, ObservableObject {
         )
 
         // Also show on external display & browser if configured
+        let paragraphBreaks = paragraphBreakWordIndices(in: trimmed)
         externalDisplayController.show(
             speechRecognizer: overlayController.speechRecognizer,
             words: words,
             totalCharCount: totalCharCount,
+            paragraphBreakBeforeWordIndices: paragraphBreaks,
             hasNextPage: false
         )
         if browserServer.isRunning {
@@ -398,14 +437,22 @@ class TextreamService: NSObject, ObservableObject {
 
         pages = [trimmed]
 
-        // Preserve read progress: only update unread portion
-        let preservedCharCount = overlayController.speechRecognizer.recognizedCharCount
-
         let words = splitTextIntoWords(trimmed)
         let totalCharCount = words.joined(separator: " ").count
 
+        // Preserve only the prefix that was both recognized by the Mac and
+        // locked in the director's edit snapshot. Recognition can advance
+        // while an update is in flight, so trusting either count alone could
+        // make newly read text unexpectedly editable or overwriteable.
+        let recognizedCharCount = overlayController.speechRecognizer.recognizedCharCount
+        let preservedCharCount = min(
+            totalCharCount,
+            min(recognizedCharCount, max(0, readCharCount))
+        )
+
         // Update overlay content without resetting speech progress
         overlayController.overlayContent.words = words
+        overlayController.overlayContent.paragraphBreakBeforeWordIndices = paragraphBreakWordIndices(in: trimmed)
         overlayController.overlayContent.totalCharCount = totalCharCount
         overlayController.overlayContent.hasNextPage = false
 
@@ -417,6 +464,7 @@ class TextreamService: NSObject, ObservableObject {
 
         // Update external display & browser
         externalDisplayController.overlayContent.words = words
+        externalDisplayController.overlayContent.paragraphBreakBeforeWordIndices = paragraphBreakWordIndices(in: trimmed)
         externalDisplayController.overlayContent.totalCharCount = totalCharCount
         if browserServer.isRunning {
             browserServer.updateContent(
@@ -431,6 +479,10 @@ class TextreamService: NSObject, ObservableObject {
         guard directorIsReading else { return }
         overlayController.dismiss()
         directorIsReading = false
+    }
+
+    func updateKeepAwakeActivity(enabled: Bool) {
+        overlayController.updateKeepAwakeActivity(enabled: enabled)
     }
 
     // macOS Services handler

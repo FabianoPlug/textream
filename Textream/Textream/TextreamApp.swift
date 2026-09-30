@@ -6,13 +6,20 @@
 //
 
 import SwiftUI
+import OSLog
 
 extension Notification.Name {
     static let openSettings = Notification.Name("openSettings")
     static let openAbout = Notification.Name("openAbout")
+    static let startPrompter = Notification.Name("startPrompter")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private let lifecycleLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "dev.fka.textream",
+        category: "AppLifecycle"
+    )
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
         let launchedByURL: Bool
@@ -35,8 +42,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             TextreamService.shared.hideMainWindow()
         }
 
-        // Silent update check on launch
+        #if !APP_STORE
+        // Direct-download builds check GitHub for updates. App Store builds are
+        // updated exclusively through the App Store.
         UpdateChecker.shared.checkForUpdates(silent: true)
+        #endif
 
         // Start browser server if enabled
         TextreamService.shared.updateBrowserServer()
@@ -73,6 +83,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         NSApp.terminate(nil)
         return false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard
+            TextreamService.shared.overlayController.isShowing,
+            let event = NSAppleEventManager.shared().currentAppleEvent,
+            event.eventClass == kCoreEventClass,
+            event.eventID == kAEQuitApplication,
+            event.paramDescriptor(forKeyword: kAEQuitReason) == nil
+        else {
+            return .terminateNow
+        }
+
+        let senderPID = event.attributeDescriptor(forKeyword: keySenderPIDAttr)?.int32Value ?? 0
+        let runningApplication = NSRunningApplication(processIdentifier: pid_t(senderPID))
+        let senderName = runningApplication?.localizedName ?? "unknown"
+        let senderBundleIdentifier = runningApplication?.bundleIdentifier ?? "unknown"
+
+        lifecycleLogger.warning(
+            "Blocked external quit while teleprompter is active; senderPID=\(senderPID, privacy: .public) sender=\(senderName, privacy: .public) bundleIdentifier=\(senderBundleIdentifier, privacy: .public)"
+        )
+        return .terminateCancel
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -135,10 +167,12 @@ struct TextreamApp: App {
                 Button(L10n.string("menu.about")) {
                     NotificationCenter.default.post(name: .openAbout, object: nil)
                 }
+                #if !APP_STORE
                 Divider()
                 Button(L10n.string("menu.checkForUpdates")) {
                     UpdateChecker.shared.checkForUpdates()
                 }
+                #endif
             }
             CommandGroup(after: .appSettings) {
                 Button(L10n.string("menu.settings")) {
@@ -163,6 +197,13 @@ struct TextreamApp: App {
                     TextreamService.shared.saveFileAs()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Start Prompter") {
+                    NotificationCenter.default.post(name: .startPrompter, object: nil)
+                }
+                .keyboardShortcut(.return, modifiers: .command)
             }
             CommandGroup(replacing: .windowArrangement) { }
             CommandGroup(replacing: .help) {

@@ -175,3 +175,12 @@
 "web.director.placeholder" = "Type or paste your script here…";
 "web.director.stop" = "Stop";
 "web.reconnecting" = "Reconnecting…";
+"settings.height" = "Height";
+"settings.tab.reading" = "Reading";
+"settings.seconds.0" = "Instant";
+"settings.seconds.1" = "1 second";
+"speech.recognitionDenied.short" = "Speech recognition not authorized. Open System Settings → Privacy & Security → Speech Recognition.";
+"speech.microphoneAuthUnavailable" = "Microphone authorization is unavailable.";
+"speech.unsupportedLanguage" = "Speech recognition isn't supported for the selected language.";
+"speech.requestUnavailable" = "Unable to create a speech recognition request.";
+"speech.unsupportedAudioFormat" = "Audio input format is unsupported.";

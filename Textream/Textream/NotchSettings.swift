@@ -313,6 +313,21 @@ enum ListeningMode: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Reading Position
+
+enum ReadingPosition: String, CaseIterable, Identifiable {
+    case centered, nearTop
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .centered: return "Centered"
+        case .nearTop:  return "Near Top"
+        }
+    }
+}
+
 // MARK: - Settings
 
 @Observable
@@ -411,6 +426,25 @@ class NotchSettings {
         didSet { UserDefaults.standard.set(showElapsedTime, forKey: "showElapsedTime") }
     }
 
+    var keepScreenAwake: Bool {
+        didSet {
+            UserDefaults.standard.set(keepScreenAwake, forKey: "keepScreenAwake")
+            TextreamService.shared.updateKeepAwakeActivity(enabled: keepScreenAwake)
+        }
+    }
+
+    var readingPosition: ReadingPosition {
+        didSet { UserDefaults.standard.set(readingPosition.rawValue, forKey: "readingPosition") }
+    }
+
+    var showParagraphDividers: Bool {
+        didSet { UserDefaults.standard.set(showParagraphDividers, forKey: "showParagraphDividers") }
+    }
+
+    var showLastSpokenWords: Bool {
+        didSet { UserDefaults.standard.set(showLastSpokenWords, forKey: "showLastSpokenWords") }
+    }
+
     var selectedMicUID: String {
         didSet { UserDefaults.standard.set(selectedMicUID, forKey: "selectedMicUID") }
     }
@@ -455,7 +489,8 @@ class NotchSettings {
 
     static let defaultWidth: CGFloat = 340
     static let defaultHeight: CGFloat = 150
-    static let defaultLocale: String = Locale.current.identifier
+    static let defaultLocale: String = SpeechLocaleSupport.closestSupportedLocale(to: Locale.current.identifier)?.identifier
+        ?? Locale.current.identifier
 
     static let minWidth: CGFloat = 310
     static let maxWidth: CGFloat = 500
@@ -467,7 +502,9 @@ class NotchSettings {
         let savedHeight = UserDefaults.standard.double(forKey: "textAreaHeight")
         self.notchWidth = savedWidth > 0 ? CGFloat(savedWidth) : Self.defaultWidth
         self.textAreaHeight = savedHeight > 0 ? CGFloat(savedHeight) : Self.defaultHeight
-        self.speechLocale = UserDefaults.standard.string(forKey: "speechLocale") ?? Self.defaultLocale
+        let preferredSpeechLocale = UserDefaults.standard.string(forKey: "speechLocale") ?? Self.defaultLocale
+        self.speechLocale = SpeechLocaleSupport.closestSupportedLocale(to: preferredSpeechLocale)?.identifier
+            ?? Self.defaultLocale
         self.fontSizePreset = FontSizePreset(rawValue: UserDefaults.standard.string(forKey: "fontSizePreset") ?? "") ?? .lg
         self.fontFamilyPreset = FontFamilyPreset(rawValue: UserDefaults.standard.string(forKey: "fontFamilyPreset") ?? "") ?? .sans
         self.fontColorPreset = FontColorPreset(rawValue: UserDefaults.standard.string(forKey: "fontColorPreset") ?? "") ?? .white
@@ -493,17 +530,24 @@ class NotchSettings {
         self.scrollSpeed = savedSpeed > 0 ? savedSpeed : 3
         self.hideFromScreenShare = UserDefaults.standard.object(forKey: "hideFromScreenShare") as? Bool ?? true
         self.showElapsedTime = UserDefaults.standard.object(forKey: "showElapsedTime") as? Bool ?? true
+        self.keepScreenAwake = UserDefaults.standard.object(forKey: "keepScreenAwake") as? Bool ?? false
+        self.readingPosition = ReadingPosition(rawValue: UserDefaults.standard.string(forKey: "readingPosition") ?? "") ?? .centered
+        self.showParagraphDividers = UserDefaults.standard.object(forKey: "showParagraphDividers") as? Bool ?? false
+        self.showLastSpokenWords = UserDefaults.standard.object(forKey: "showLastSpokenWords") as? Bool ?? true
         self.selectedMicUID = UserDefaults.standard.string(forKey: "selectedMicUID") ?? ""
         self.autoNextPage = UserDefaults.standard.object(forKey: "autoNextPage") as? Bool ?? false
         let savedDelay = UserDefaults.standard.integer(forKey: "autoNextPageDelay")
-        self.autoNextPageDelay = savedDelay > 0 ? savedDelay : 3
+        self.autoNextPageDelay = [0, 1, 3, 5].contains(savedDelay)
+            && UserDefaults.standard.object(forKey: "autoNextPageDelay") != nil
+            ? savedDelay
+            : 3
         let savedFullscreenScreenID = UserDefaults.standard.integer(forKey: "fullscreenScreenID")
         self.fullscreenScreenID = UInt32(savedFullscreenScreenID)
         self.browserServerEnabled = UserDefaults.standard.object(forKey: "browserServerEnabled") as? Bool ?? false
         let savedPort = UserDefaults.standard.integer(forKey: "browserServerPort")
-        self.browserServerPort = savedPort > 0 ? UInt16(savedPort) : 7373
+        self.browserServerPort = (1024..<Int(UInt16.max)).contains(savedPort) ? UInt16(savedPort) : 7373
         self.directorModeEnabled = UserDefaults.standard.object(forKey: "directorModeEnabled") as? Bool ?? false
         let savedDirectorPort = UserDefaults.standard.integer(forKey: "directorServerPort")
-        self.directorServerPort = savedDirectorPort > 0 ? UInt16(savedDirectorPort) : 7575
+        self.directorServerPort = (1024..<Int(UInt16.max)).contains(savedDirectorPort) ? UInt16(savedDirectorPort) : 7575
     }
 }

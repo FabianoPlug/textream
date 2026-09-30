@@ -29,7 +29,13 @@ class ExternalDisplayController {
         return screens.first
     }
 
-    func show(speechRecognizer: SpeechRecognizer, words: [String], totalCharCount: Int, hasNextPage: Bool = false) {
+    func show(
+        speechRecognizer: SpeechRecognizer,
+        words: [String],
+        totalCharCount: Int,
+        paragraphBreakBeforeWordIndices: Set<Int> = [],
+        hasNextPage: Bool = false
+    ) {
         let settings = NotchSettings.shared
         guard settings.externalDisplayMode != .off else { return }
         guard let screen = targetScreen() else { return }
@@ -37,6 +43,7 @@ class ExternalDisplayController {
         dismiss()
 
         overlayContent.words = words
+        overlayContent.paragraphBreakBeforeWordIndices = paragraphBreakBeforeWordIndices
         overlayContent.totalCharCount = totalCharCount
         overlayContent.hasNextPage = hasNextPage
 
@@ -46,12 +53,13 @@ class ExternalDisplayController {
         let content = ExternalDisplayView(
             content: overlayContent,
             speechRecognizer: speechRecognizer,
-            mirrorAxis: mirrorAxis
+            mirrorAxis: mirrorAxis,
+            handlesAutoNextPage: false
         )
 
         let hostingView = NSHostingView(rootView: content)
 
-        let panel = NSPanel(
+        let panel = PrompterPanel(
             contentRect: screenFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -108,6 +116,7 @@ struct ExternalDisplayView: View {
     @Bindable var content: OverlayContent
     @Bindable var speechRecognizer: SpeechRecognizer
     let mirrorAxis: MirrorAxis?
+    let handlesAutoNextPage: Bool
 
     private var words: [String] { content.words }
     private var totalCharCount: Int { content.totalCharCount }
@@ -116,6 +125,8 @@ struct ExternalDisplayView: View {
     // Timer-based scroll for classic & silence-paused modes
     @State private var timerWordProgress: Double = 0
     @State private var isUserScrolling: Bool = false
+    @State private var countdownRemaining: Int = 0
+    @State private var countdownTimer: Timer? = nil
     private let scrollTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
 
     private var listeningMode: ListeningMode {
@@ -192,10 +203,18 @@ struct ExternalDisplayView: View {
         .scaleEffect(x: mirrorAxis?.scaleX ?? 1, y: mirrorAxis?.scaleY ?? 1)
         .animation(.easeInOut(duration: 0.5), value: isDone)
         .onChange(of: isDone) { _, done in
-            if done && listeningMode == .wordTracking {
-                speechRecognizer.stop()
+            if done {
+                if listeningMode == .wordTracking {
+                    speechRecognizer.stop()
+                }
+                if handlesAutoNextPage && hasNextPage && NotchSettings.shared.autoNextPage {
+                    startCountdown()
+                }
+            } else {
+                cancelCountdown()
             }
         }
+        .onDisappear { cancelCountdown() }
         .onReceive(scrollTimer) { _ in
             guard !isDone, !isUserScrolling else { return }
             let speed = NotchSettings.shared.scrollSpeed // words per second
@@ -209,6 +228,11 @@ struct ExternalDisplayView: View {
             case .wordTracking:
                 break
             }
+        }
+        .onChange(of: content.currentPageIndex) { _, _ in
+            timerWordProgress = 0
+            isUserScrolling = false
+            cancelCountdown()
         }
     }
 
@@ -243,9 +267,14 @@ struct ExternalDisplayView: View {
                     },
                     smoothScroll: listeningMode != .wordTracking,
                     smoothWordProgress: timerWordProgress,
-                    isListening: isEffectivelyListening
-                )
-                .padding(.horizontal, hPad)
+                    isListening: isEffectivelyListening,
+                    readingPosition: NotchSettings.shared.readingPosition,
+                paragraphBreakBeforeWordIndices: NotchSettings.shared.showParagraphDividers
+                    ? content.paragraphBreakBeforeWordIndices
+                    : []
+            )
+            .id(content.currentPageIndex)
+            .padding(.horizontal, hPad)
 
                 Spacer().frame(height: 20)
 
@@ -258,7 +287,8 @@ struct ExternalDisplayView: View {
                     )
                     .frame(width: 240, height: 32)
 
-                    if listeningMode == .wordTracking {
+                    if listeningMode == .wordTracking,
+                       NotchSettings.shared.showLastSpokenWords {
                         Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(5).joined(separator: " "))
                             .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
@@ -296,7 +326,15 @@ struct ExternalDisplayView: View {
     private var doneView: some View {
         VStack(spacing: 12) {
             if hasNextPage {
+                if countdownRemaining > 0 {
+                    Text("\(countdownRemaining)")
+                        .font(.system(size: 40, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.3), value: countdownRemaining)
+                }
                 Button {
+                    cancelCountdown()
                     speechRecognizer.shouldAdvancePage = true
                 } label: {
                     HStack(spacing: 12) {
@@ -322,5 +360,33 @@ struct ExternalDisplayView: View {
             }
         }
         .transition(.scale.combined(with: .opacity))
+    }
+
+    private func startCountdown() {
+        countdownTimer?.invalidate()
+        countdownRemaining = NotchSettings.shared.autoNextPageDelay
+        guard countdownRemaining > 0 else {
+            countdownTimer = nil
+            DispatchQueue.main.async {
+                speechRecognizer.shouldAdvancePage = true
+            }
+            return
+        }
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            DispatchQueue.main.async {
+                countdownRemaining -= 1
+                if countdownRemaining <= 0 {
+                    timer.invalidate()
+                    countdownTimer = nil
+                    speechRecognizer.shouldAdvancePage = true
+                }
+            }
+        }
+    }
+
+    private func cancelCountdown() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+        countdownRemaining = 0
     }
 }
