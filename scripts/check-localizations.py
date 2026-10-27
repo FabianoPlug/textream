@@ -24,14 +24,18 @@ def read_table(path):
 
 
 english = read_table(ROOT / "en.lproj/Localizable.strings")
-chinese = read_table(ROOT / "zh-Hans.lproj/Localizable.strings")
-assert english.keys() == chinese.keys(), "Localization keys differ between languages"
-for key in english:
-    assert FORMAT.findall(english[key]) == FORMAT.findall(chinese[key]), f"Format mismatch: {key}"
-for name in ["InfoPlist.strings"]:
-    en = read_table(ROOT / "en.lproj" / name)
-    zh = read_table(ROOT / "zh-Hans.lproj" / name)
-    assert en.keys() == zh.keys(), f"Keys differ in {name}"
+translations = sorted(p.name.removesuffix(".lproj") for p in ROOT.glob("*.lproj")
+                     if p.name != "en.lproj")
+assert translations, "No translated .lproj found next to en.lproj"
+for locale in translations:
+    table = read_table(ROOT / f"{locale}.lproj/Localizable.strings")
+    assert english.keys() == table.keys(), f"Localization keys differ in {locale}"
+    for key in english:
+        assert FORMAT.findall(english[key]) == FORMAT.findall(table[key]), f"Format mismatch in {locale}: {key}"
+    for name in ["InfoPlist.strings"]:
+        en = read_table(ROOT / "en.lproj" / name)
+        other = read_table(ROOT / f"{locale}.lproj" / name)
+        assert en.keys() == other.keys(), f"Keys differ in {locale}/{name}"
 
 # Include web dictionaries and SwiftUI's literal localization keys as well as L10n calls.
 prefixes = {key.split('.')[0] for key in english if '.' in key}
@@ -45,4 +49,5 @@ assert not (used - english.keys()), f"Missing localization keys: {sorted(used - 
 for name in ["BrowserServer.swift", "DirectorServer.swift"]:
     source = (ROOT / name).read_text(encoding="utf-8")
     assert 'let lang = L10n.webLanguageCode\n        return """' in source, f"Missing HTML return in {name}"
-print(f"Validated {len(english)} translations, {len(used)} used keys, InfoPlist parity, and HTML returns")
+print(f"Validated {len(english)} keys x {len(translations)} locales ({', '.join(translations)}), "
+      f"{len(used)} used keys, InfoPlist parity, and HTML returns")

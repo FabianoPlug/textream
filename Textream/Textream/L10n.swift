@@ -16,7 +16,9 @@ enum L10n {
 
     static var webLanguageCode: String {
         let preferred = Bundle.main.preferredLocalizations.first ?? Locale.current.identifier
-        return preferred.hasPrefix("zh") ? "zh-Hans" : "en"
+        if preferred.hasPrefix("zh") { return "zh-Hans" }
+        if preferred.hasPrefix("pt") { return "pt-BR" }
+        return "en"
     }
 
     static func webStringsJSON(_ values: [String: String]) -> String {

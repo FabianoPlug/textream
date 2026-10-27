@@ -1,0 +1,8 @@
+"CFBundleDisplayName" = "Textream";
+"CFBundleTypeName" = "Documento do Textream";
+"NSMicrophoneUsageDescription" = "O Textream precisa de acesso ao microfone para ouvir a sua fala e destacar as palavras conforme você as lê.";
+"NSMenuItem" = "Ler no Textream";
+"NSSpeechRecognitionUsageDescription" = "O Textream usa reconhecimento de fala para acompanhar a sua leitura e destacar a palavra atual.";
+"Read in Textream" = "Ler no Textream";
+"Textream Document" = "Documento do Textream";
+"UTTypeDescription" = "Documento do Textream";
